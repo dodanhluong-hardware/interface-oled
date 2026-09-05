@@ -15,6 +15,9 @@ const btnSidebarToggle = document.getElementById('btn-sidebar-toggle');
 const btnSidebarClose = document.getElementById('btn-sidebar-close');
 const sidebarBackdrop = document.getElementById('sidebar-backdrop');
 const topbarPanelTitle = document.getElementById('topbar-panel-title');
+const connectGate = document.getElementById('connect-gate');
+const topbarBleState = document.getElementById('topbar-ble-state');
+const btnBleDisconnectTop = document.getElementById('btn-ble-disconnect-top');
 const pwaBar = document.getElementById('pwa-bar');
 const btnPwaInstall = document.getElementById('btn-pwa-install');
 const btnPwaClose = document.getElementById('btn-pwa-close');
@@ -236,6 +239,17 @@ function setSidebarOpen(open) {
   document.body.classList.toggle('sidebar-open', open);
 }
 
+function showConnectScreen() {
+  document.body.classList.add('connection-gate-active');
+  setSidebarOpen(false);
+  if (connectGate) connectGate.setAttribute('aria-hidden', 'false');
+}
+
+function showDspScreen() {
+  document.body.classList.remove('connection-gate-active');
+  if (connectGate) connectGate.setAttribute('aria-hidden', 'true');
+}
+
 function syncTopbarPanelTitle(tabEl) {
   if (!topbarPanelTitle || !tabEl) return;
   topbarPanelTitle.textContent = tabEl.textContent?.trim() || '';
@@ -271,10 +285,15 @@ tabs.forEach((tab) => {
 syncTopbarPanelTitle(document.querySelector('.tab.active'));
 
 function setConnUI() {
-  if (!connState) return;
-  connState.textContent = connected ? 'Đã kết nối' : 'Chưa kết nối';
-  connState.classList.remove('ok', 'bad');
-  connState.classList.add(connected ? 'ok' : 'bad');
+  if (connState) {
+    connState.textContent = connected ? 'Đã kết nối' : 'Chưa kết nối';
+    connState.classList.remove('ok', 'bad');
+    connState.classList.add(connected ? 'ok' : 'bad');
+  }
+  if (topbarBleState) {
+    topbarBleState.textContent = connected ? 'BLE: Đã kết nối' : 'BLE: Chưa kết nối';
+    topbarBleState.classList.toggle('ok', connected);
+  }
 }
 
 function setBleLinkState(text, mode = 'normal') {
@@ -301,6 +320,9 @@ function setBleToggleUI() {
     btnBleToggle.textContent = 'Kết nối';
     btnBleToggle.classList.remove('danger');
   }
+  if (btnBleDisconnectTop) {
+    btnBleDisconnectTop.disabled = bleConnecting || !connected;
+  }
 }
 
 function applyBleDisconnectedState(text = 'Chưa kết nối BLE Web') {
@@ -319,6 +341,7 @@ function applyBleDisconnectedState(text = 'Chưa kết nối BLE Web') {
   setConnUI();
   setBleToggleUI();
   setBleLinkState(text, 'bad');
+  showConnectScreen();
 }
 
 function clearBleReconnectTimer() {
@@ -381,6 +404,7 @@ async function establishBleConnection(device, reason) {
   setBleLinkState(`Đã kết nối BLE: ${name}`, 'ok');
   setTxStatus('link up', 'ok');
   appendRxLog(`BLE ${reason}: ${name}`);
+  showDspScreen();
   const configSyncOk = await requestDspConfigFromChip();
   if (!device.gatt.connected || !connected) {
     throw new Error('BLE link dropped during DSP configuration read');
@@ -1822,6 +1846,12 @@ if (btnBleToggle) {
   });
 }
 
+if (btnBleDisconnectTop) {
+  btnBleDisconnectTop.addEventListener('click', () => {
+    if (!bleConnecting && connected) disconnectBleWeb();
+  });
+}
+
 if (btnLogClear) {
   btnLogClear.addEventListener('click', () => {
     clearRxLog();
@@ -2121,16 +2151,6 @@ dynamicEqThresholdControls.forEach((control) => {
 
 document.querySelectorAll('input[type="range"]:not(.eq-band), select').forEach((el) => {
   el.addEventListener('change', () => {
-    if ((el.id === 'l-gain' || el.id === 'r-gain') && !ADC_VOLUME_MODE) {
-      const other = document.getElementById(el.id === 'l-gain' ? 'r-gain' : 'l-gain');
-      if (other) {
-        other.value = el.value;
-        if (other._valueEl) other._valueEl.textContent = formatRangeValue(other);
-      }
-      sendTx(`l-gain:${el.value}`);
-      sendTx(`r-gain:${el.value}`);
-      return;
-    }
     const key = `${el.id || el.tagName}:${el.value}`;
     sendTx(key);
   });
@@ -2296,6 +2316,7 @@ updateDrcCurve();
 setConnUI();
 setBleToggleUI();
 setBleLinkState('Chưa kết nối BLE Web', 'bad');
+showConnectScreen();
 appendRxLog('Giao diện đã sẵn sàng. Đang chờ dữ liệu BLE từ thiết bị...');
 initRangeLiveValues();
 refreshControlHints();

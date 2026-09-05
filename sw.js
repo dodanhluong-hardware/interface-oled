@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dsp-interface-oled-v22-reset-sync-music40-20260905';
+const CACHE_NAME = 'dsp-interface-oled-v25-reset-volume-sync-20260905';
 const ASSETS = [
   './',
   './index.html',

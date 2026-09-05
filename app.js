@@ -719,7 +719,6 @@ function applyMcuConfigItem(value, bytes) {
       : ['rv-level', 'rv-pre-delay', 'rv-decay', 'rv-mix', 'rv-room', 'rv-damping'];
     const id = effectIds[bytes[3]];
     let effectValue = view.getUint16(4, true);
-    if (command === 0x04 && bytes[3] === 2) effectValue /= 10;
     if (id) setControlValueFromMcu(id, effectValue);
     return true;
   }
@@ -785,6 +784,10 @@ function handleBleRxNotification(event) {
           syncSubModeUI('mono');
           syncSubPhaseUI(0);
           if (kcModeSelect) kcModeSelect.value = '0';
+          if (!ADC_VOLUME_MODE) {
+            setControlValueFromMcu('l-gain', 40);
+            setControlValueFromMcu('r-gain', 40);
+          }
           appendRxLog('RESET ACK; đang đọc lại toàn bộ cấu hình mặc định');
           window.setTimeout(() => { syncAfterResetDefaults().catch(() => {}); }, 250);
         }
@@ -970,7 +973,7 @@ function buildEffectPacket(tag) {
     'echo-mix':       { command: 0x03, param: 3, scale: 1, min: 0, max: 100 },
     'rv-level':       { command: 0x04, param: 0, scale: 1, min: 0, max: 100 },
     'rv-pre-delay':   { command: 0x04, param: 1, scale: 1, min: 0, max: 100 },
-    'rv-decay':       { command: 0x04, param: 2, scale: 10, min: 1, max: 100 },
+    'rv-decay':       { command: 0x04, param: 2, scale: 1, min: 0, max: 100 },
     'rv-mix':         { command: 0x04, param: 3, scale: 1, min: 0, max: 100 },
     'rv-room':        { command: 0x04, param: 4, scale: 1, min: 0, max: 100 },
     'rv-damping':     { command: 0x04, param: 5, scale: 1, min: 0, max: 100 },
@@ -981,7 +984,10 @@ function buildEffectPacket(tag) {
   const input = Number(match[2]);
   if (!spec || !Number.isFinite(input)) return null;
 
-  const value = Math.max(spec.min, Math.min(spec.max, Math.round(input * spec.scale)));
+  let value = Math.max(spec.min, Math.min(spec.max, Math.round(input * spec.scale)));
+  // Firmware minimum decay is 0.1 s (protocol value 1); UI still exposes
+  // the intuitive relative range 0–100% and maps 0% to that safe minimum.
+  if (match[1] === 'rv-decay' && value < 1) value = 1;
   const packet = new Uint8Array(5);
   packet[0] = 0xa5;
   packet[1] = spec.command;
@@ -1290,7 +1296,10 @@ function inferRangeUnit(rangeEl) {
   if (id.includes('freq') || id.includes('lpf') || id.includes('hpf')) return 'Hz';
   if (id.includes('atk') || id.includes('attack') || id.includes('rel') || id.includes('release')) return 'ms';
   if (id.includes('thr') || id.includes('threshold') || id.includes('depth')) return 'dB';
-  if (id.includes('gain') || id.includes('fx-send') || id.includes('afb') || id.includes('noise') || id.includes('mic')) return '';
+  if (id.includes('gain') || id.includes('fx-send') || id.includes('noise') || id.includes('mic') ||
+      id.includes('level') || id.includes('mix') || id.includes('repeat') || id.includes('room') ||
+      id.includes('damping') || id.includes('decay')) return '%';
+  if (Number(rangeEl.min) === 0 && Number(rangeEl.max) === 100) return '%';
   return '';
 }
 
@@ -1336,17 +1345,18 @@ function initRangeLiveValues() {
 }
 
 function controlHintUnit(control) {
-  if (control.dataset.unit) return control.dataset.unit;
+  if (control.dataset.unit) return ` ${control.dataset.unit}`;
   const id = String(control.id || '').toLowerCase();
   const label = String(control.closest('label')?.textContent || '').toLowerCase();
   const field = String(control.dataset.field || '').toLowerCase();
   if (field === 'fc') return ' Hz';
   if (field === 'gain') return ' dB';
+  if (id === 'l-gain' || id === 'r-gain' || id === 'sub-gain' || id === 'mic-output-gain') return '%';
   if (id.includes('ratio') || label.includes('tỷ lệ nén')) return ':1';
   if (id.includes('freq') || id === 'dyn-low-freq' || id === 'dyn-high-freq' || id === 'mic-afb-freq' || label.includes('tần số')) return ' Hz';
   if (id.includes('delay') || id.includes('attack') || id.includes('release') || label.includes('(ms)') || label.includes('trễ')) return ' ms';
   if (id.includes('gain') || id.includes('threshold') || id.includes('pregain') || id.includes('bass') || id.includes('treble') || label.includes('db')) return ' dB';
-  if (id.includes('decay')) return ' s';
+  if (id === 'rv-decay') return '%';
   if (control.type === 'range' && (Number(control.min) >= 0 && Number(control.max) <= 100)) return '%';
   return '';
 }
@@ -1371,7 +1381,9 @@ function refreshControlHints(root = document) {
       host.appendChild(hint);
     }
     const unit = controlHintUnit(control);
-    hint.textContent = `Phạm vi: ${formatHintNumber(min)} – ${formatHintNumber(max)}${unit}`;
+    hint.textContent = control.id === 'rv-decay'
+      ? 'Phạm vi: 0 – 100% (0% ≈ mức tối thiểu 0,1 s)'
+      : `Phạm vi: ${formatHintNumber(min)} – ${formatHintNumber(max)}${unit}`;
     hint.title = 'Giá trị tối thiểu và tối đa được firmware hỗ trợ';
   });
 }
@@ -2109,6 +2121,16 @@ dynamicEqThresholdControls.forEach((control) => {
 
 document.querySelectorAll('input[type="range"]:not(.eq-band), select').forEach((el) => {
   el.addEventListener('change', () => {
+    if ((el.id === 'l-gain' || el.id === 'r-gain') && !ADC_VOLUME_MODE) {
+      const other = document.getElementById(el.id === 'l-gain' ? 'r-gain' : 'l-gain');
+      if (other) {
+        other.value = el.value;
+        if (other._valueEl) other._valueEl.textContent = formatRangeValue(other);
+      }
+      sendTx(`l-gain:${el.value}`);
+      sendTx(`r-gain:${el.value}`);
+      return;
+    }
     const key = `${el.id || el.tagName}:${el.value}`;
     sendTx(key);
   });

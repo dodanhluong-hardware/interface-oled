@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dsp-interface-oled-v27-connection-gate-20260905';
+const CACHE_NAME = 'dsp-interface-oled-v28-connection-throttle-20260905';
 const ASSETS = [
   './',
   './index.html',

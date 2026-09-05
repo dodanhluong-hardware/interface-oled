@@ -38,6 +38,9 @@ const DSP_CMD_SET_BT_NAME = 0x0b;
 const DSP_CMD_SET_BLE_NAME = 0x0c;
 const DSP_CMD_SET_KC_MODE = 0x0d;
 const DSP_CMD_RESET_DEFAULTS = 0x0e;
+/* Keep reset requests at least this far apart so the MCU can finish its
+ * reset/ACK/config snapshot sequence even if the user taps repeatedly. */
+const RESET_MIN_INTERVAL_MS = 2000;
 // FF01 uses a single ATT packet: 2-byte header + at most 17 UTF-8 bytes.
 const DSP_DEVICE_NAME_MAX_BYTES = 17;
 const DSP_EVENT_CONFIG_BEGIN = 0x82;
@@ -135,6 +138,7 @@ let configSyncReceivedItems = 0;
 let configSyncRevision = 0;
 let saveAckTimer = null;
 let resetAckTimer = null;
+let resetLastRequestAt = 0;
 const rxLogLines = [];
 const DB_MIN = -12;
 const DB_MAX = 12;
@@ -1876,6 +1880,14 @@ if (btnResetDefaults) {
       'Đưa toàn bộ thông số DSP và chế độ KC về mặc định? Tên thiết bị sẽ được giữ nguyên.'
     );
     if (!accepted) return;
+
+    const now = Date.now();
+    if ((now - resetLastRequestAt) < RESET_MIN_INTERVAL_MS) {
+      setTxStatus('vui lòng chờ trước khi reset lại', 'warn');
+      appendRxLog('Bỏ qua RESET liên tiếp quá nhanh');
+      return;
+    }
+    resetLastRequestAt = now;
 
     btnResetDefaults.disabled = true;
     setTxStatus('đang khôi phục mặc định...', 'warn');

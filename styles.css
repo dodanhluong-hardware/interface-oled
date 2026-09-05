@@ -3728,6 +3728,12 @@ input[type="range"]::-moz-range-thumb { width: 13px; height: 13px; border: 3px s
 .hardware-owned-control input[type="range"] { cursor: not-allowed; }
 .hardware-owned-note { color: #7a8d94; }
 
+/* Compact range bounds on phone screens; they remain readable but do not
+ * compete with the primary control labels. */
+@media (max-width: 760px) {
+  .control-range-hint { font-size: 8.5px; line-height: 1.15; }
+}
+
 @media (max-width: 760px) {
   .topbar { min-height: 58px; }
   main { padding: 20px 13px 86px; }
@@ -3742,6 +3748,8 @@ input[type="range"]::-moz-range-thumb { width: 13px; height: 13px; border: 3px s
 body.connection-gate-active { padding-bottom: 0; }
 body.connection-gate-active .topbar,
 body.connection-gate-active .layout { display: none !important; }
+body.connection-gate-active .bottom-bar,
+body.connection-gate-active .pwa-bar { display: none !important; }
 body.connection-gate-active .connect-gate {
   min-height: 100vh;
   display: grid;

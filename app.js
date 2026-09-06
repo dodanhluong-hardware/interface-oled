@@ -1245,6 +1245,32 @@ function packetSignature(packet) {
   return Array.from(packet).map((value) => value.toString(16).padStart(2, '0')).join('');
 }
 
+// Application-level CRC-16/CCITT-FALSE.  BLE already checks radio frames,
+// but this prevents a malformed command from being committed by the MCU.
+// Keep the legacy UTF-8 name packet unchanged (17-byte name limit); all other
+// packets are small enough to carry the two CRC bytes within the 20-byte ATT
+// payload.  Dynamic EQ is exactly 18 bytes before CRC, therefore 20 bytes.
+function appendBlePacketCrc(packet) {
+  if (!(packet instanceof Uint8Array) || packet.length < 2) return packet;
+  if (packet[1] === DSP_CMD_SET_BT_NAME || packet[1] === DSP_CMD_SET_BLE_NAME) {
+    return packet;
+  }
+  if (packet.length + 2 > 20) return packet;
+  let crc = 0xffff;
+  for (let i = 1; i < packet.length; i += 1) {
+    crc ^= packet[i] << 8;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
+      crc &= 0xffff;
+    }
+  }
+  const framed = new Uint8Array(packet.length + 2);
+  framed.set(packet);
+  framed[packet.length] = crc & 0xff;
+  framed[packet.length + 1] = (crc >>> 8) & 0xff;
+  return framed;
+}
+
 async function performTx(tag) {
   if (!connected) {
     setTxStatus('blocked (not connected)', 'bad');
@@ -1254,13 +1280,14 @@ async function performTx(tag) {
     setTxStatus('blocked (TX not ready)', 'bad');
     return;
   }
-  const packet = buildBlePacket(tag);
-  if (!packet) {
+  const basePacket = buildBlePacket(tag);
+  if (!basePacket) {
     const message = lastPacketError || 'unsupported control';
     setTxStatus(message, 'warn');
     if (lastPacketError) appendRxLog(`TX blocked: ${lastPacketError}`);
     return;
   }
+  const packet = appendBlePacketCrc(basePacket);
   const signature = packetSignature(packet);
   const repeatableCommand = packet[1] === DSP_CMD_SAVE_CONFIG
     || packet[1] === DSP_CMD_GET_CONFIG

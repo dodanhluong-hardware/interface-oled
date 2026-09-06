@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dsp-interface-oled-v29-ble-crc-20260906';
+const CACHE_NAME = 'dsp-interface-oled-v31-ble-state-20260906';
 const ASSETS = [
   './',
   './index.html',

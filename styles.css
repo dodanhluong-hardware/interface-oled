@@ -659,6 +659,13 @@ input[type="range"],
 .tab {
   transition: border-color 140ms ease, box-shadow 160ms ease, transform 120ms ease, background 180ms ease, color 160ms ease;
 }
+.locked-control,
+input[readonly].locked-control {
+  opacity: 0.58;
+  color: #64748b;
+  background: #eef2f5;
+  cursor: not-allowed;
+}
 button:hover {
   border-color: #64d6ff;
   box-shadow: 0 0 0 1px rgba(100, 214, 255, 0.4), 0 10px 18px rgba(4, 12, 26, 0.45);

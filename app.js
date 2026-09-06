@@ -1161,6 +1161,10 @@ function buildBlePacket(tag) {
     : (tag.startsWith('ble_name_') ? DSP_CMD_SET_BLE_NAME : null);
   if (nameCommand != null) {
     const prefix = nameCommand === DSP_CMD_SET_BT_NAME ? 'bt_name_' : 'ble_name_';
+    if (nameCommand === DSP_CMD_SET_BLE_NAME) {
+      lastPacketError = 'Tên BLE là thương hiệu cố định, không thể thay đổi';
+      return null;
+    }
     const name = tag.slice(prefix.length).trim();
     if (!name) {
       lastPacketError = 'Tên Bluetooth không được để trống';
@@ -2204,11 +2208,9 @@ if (btNameInput) {
 }
 
 if (bleNameInput) {
-  bleNameInput.addEventListener('change', () => {
-    const name = bleNameInput.value.trim();
-    bleNameInput.value = name;
-    sendTx(`ble_name_${name}`);
-  });
+  // BLE branding is firmware-owned; keep the field visible but never transmit it.
+  bleNameInput.readOnly = true;
+  bleNameInput.value = 'SoundProgramming';
 }
 
 document.querySelectorAll('.eq-band').forEach((el) => {

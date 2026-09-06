@@ -618,10 +618,14 @@ function formatLogTime() {
 
 function appendRxLog(message) {
   if (!rxLogBox) return;
-  if (/^(RX characteristic found|TX write ready|RX fallback characteristic|TX fallback write ready|CONFIG begin|RX ACK cmd=)/.test(message)) return;
+  if (/^\[BLE_TRACE\]/.test(message) || /^STATUS #/.test(message) ||
+      /^RX ACK cmd=/.test(message) || /^CONFIG (begin|end)/.test(message) ||
+      /^(RX characteristic found|TX write ready|RX fallback characteristic|TX fallback write ready)/.test(message)) return;
   if (/^(RX candidate|TX candidate|RX startNotifications failed|RX service enumeration|TX service enumeration)/.test(message)) {
     message = 'Không khởi tạo được một kênh BLE, đang thử phương án dự phòng';
   }
+  if (/^RX notify unavailable/.test(message)) message = 'Thiết bị chưa sẵn sàng nhận trạng thái BLE';
+  if (/^RX \S+/.test(message)) return;
   rxLogLines.push(`[${formatLogTime()}] ${message}`);
   if (rxLogLines.length > 500) rxLogLines.shift();
   rxLogBox.textContent = rxLogLines.join('\n');

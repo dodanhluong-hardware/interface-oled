@@ -133,6 +133,7 @@ let bleTxCharacteristic = null;
 let bleManualDisconnect = false;
 let bleReconnectTimer = null;
 let bleReconnectAttempt = 0;
+let bleDisconnectWait = Promise.resolve();
 
 function traceBlePhase(phase, detail = '') {
   bleTracePhase = phase;
@@ -546,12 +547,19 @@ async function connectBleWeb() {
       optionalServices,
     });
     if (!selectedDevice) throw new Error('No BLE device selected');
+    await bleDisconnectWait;
+    bleDisconnectWait = Promise.resolve();
 
     connectStage = 'GATT/SERVICE_SETUP';
     await establishBleConnection(selectedDevice, 'connected');
   } catch (error) {
     const isCancelled = error?.name === 'NotFoundError';
     const gattStillConnected = !!selectedDevice?.gatt?.connected;
+    if (gattStillConnected) {
+      selectedDevice.removeEventListener('gattserverdisconnected', handleBleDisconnected);
+      if (bleDevice === selectedDevice) bleDevice = null;
+      try { selectedDevice.gatt.disconnect(); } catch (_) { /* already down */ }
+    }
     detachBleRxNotifications();
     detachBleTxCharacteristic();
     // A BLE link may be up while GATT discovery/FF01-FF02 setup fails.
@@ -578,10 +586,32 @@ function disconnectBleWeb() {
   clearBleReconnectTimer();
   localStorage.removeItem(BLE_AUTO_RECONNECT_KEY);
   localStorage.removeItem(BLE_DEVICE_ID_KEY);
-  if (bleDevice && bleDevice.gatt?.connected) {
+  const device = bleDevice;
+  if (device && device.gatt?.connected) {
     appendRxLog('Disconnect requested');
-    bleDevice.gatt.disconnect();
+    device.removeEventListener('gattserverdisconnected', handleBleDisconnected);
+    bleDevice = null;
+    bleDisconnectWait = new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        device.removeEventListener('gattserverdisconnected', finish);
+        resolve();
+      };
+      device.addEventListener('gattserverdisconnected', finish);
+      setTimeout(finish, 500);
+      try { device.gatt.disconnect(); } catch (_) { finish(); }
+    });
+    detachBleRxNotifications();
+    detachBleTxCharacteristic();
+    applyBleDisconnectedState('Đã ngắt kết nối BLE Web');
+    setTxStatus('link down', 'bad');
     return;
+  }
+  if (device) {
+    device.removeEventListener('gattserverdisconnected', handleBleDisconnected);
+    bleDevice = null;
   }
   detachBleRxNotifications();
   detachBleTxCharacteristic();

@@ -541,7 +541,8 @@ async function connectBleWeb() {
       '0000ff00-0000-1000-8000-00805f9b34fb',
     ];
     selectedDevice = await navigator.bluetooth.requestDevice({
-      acceptAllDevices: true,
+      // Chỉ quét thiết bị MCU có tên BLE cố định của sản phẩm.
+      filters: [{ name: 'SoundProgramming' }],
       optionalServices,
     });
     if (!selectedDevice) throw new Error('No BLE device selected');
@@ -897,7 +898,7 @@ function handleBleRxNotification(event) {
     }
   }
   const payload = decodeRxValue(value);
-  appendRxLog('Thiết bị gửi phản hồi chưa được hỗ trợ');
+  console.debug('[BLE_RX_UNHANDLED]', payload || '(empty)');
 }
 
 function detachBleRxNotifications() {

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dsp-interface-oled-v36-friendly-log-20260906';
+const CACHE_NAME = 'dsp-interface-oled-v38-mcu-filter-20260906';
 const ASSETS = [
   './',
   './index.html',

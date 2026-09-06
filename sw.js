@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dsp-interface-oled-v34-ui-text-20260906';
+const CACHE_NAME = 'dsp-interface-oled-v35-friendly-log-20260906';
 const ASSETS = [
   './',
   './index.html',

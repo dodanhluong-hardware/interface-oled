@@ -137,7 +137,7 @@ let bleReconnectAttempt = 0;
 function traceBlePhase(phase, detail = '') {
   bleTracePhase = phase;
   const suffix = detail ? ` ${detail}` : '';
-  appendRxLog(`[BLE_TRACE] #${bleTraceSession} ${phase}${suffix}`);
+  console.debug(`[BLE_TRACE] #${bleTraceSession} ${phase}${suffix}`);
 }
 let configSyncResolve = null;
 let configSyncTimer = null;
@@ -148,6 +148,7 @@ let saveAckTimer = null;
 let resetAckTimer = null;
 let resetLastRequestAt = 0;
 const rxLogLines = [];
+let lastFriendlySystemStatus = '';
 const DB_MIN = -12;
 const DB_MAX = 12;
 const CHART_H = 30;
@@ -617,6 +618,10 @@ function formatLogTime() {
 
 function appendRxLog(message) {
   if (!rxLogBox) return;
+  if (/^(RX characteristic found|TX write ready|RX fallback characteristic|TX fallback write ready|CONFIG begin|RX ACK cmd=)/.test(message)) return;
+  if (/^(RX candidate|TX candidate|RX startNotifications failed|RX service enumeration|TX service enumeration)/.test(message)) {
+    message = 'Không khởi tạo được một kênh BLE, đang thử phương án dự phòng';
+  }
   rxLogLines.push(`[${formatLogTime()}] ${message}`);
   if (rxLogLines.length > 500) rxLogLines.shift();
   rxLogBox.textContent = rxLogLines.join('\n');
@@ -625,6 +630,7 @@ function appendRxLog(message) {
 
 function clearRxLog() {
   rxLogLines.length = 0;
+  lastFriendlySystemStatus = '';
   if (!rxLogBox) return;
   rxLogBox.textContent = '[đã xóa]';
 }
@@ -652,16 +658,12 @@ function decodeBleStatus(value, bytes) {
   if (bytes.length < 15 || bytes[2] !== 1) return null;
   const view = new DataView(value.buffer, value.byteOffset, value.byteLength);
   const a2dpStates = ['chờ', 'đang kết nối', 'đã kết nối', 'đang phát'];
-  const sampleRate = view.getUint32(4, true);
   const features = bytes[8];
   const dsp = bytes[9];
   const microphones = [];
   const eq = [];
   const effects = [];
   const musicDsp = [];
-  const adc = bytes.length >= 20
-    ? `ADC=khung:${bytes[15]} đỉnh1:${view.getUint16(16, true)} đỉnh2:${view.getUint16(18, true)}`
-    : null;
 
   if (features & (1 << 1)) microphones.push('1');
   if (features & (1 << 2)) microphones.push('2');
@@ -677,18 +679,17 @@ function decodeBleStatus(value, bytes) {
   if (features & (1 << 7)) musicDsp.push('DRC');
 
   return [
-    `STATUS #${bytes[14]}`,
-    `A2DP=${a2dpStates[bytes[3]] || `state-${bytes[3]}`}`,
-    `Fs=${formatBleSampleRate(sampleRate)}`,
-    `ĐƯỜNG DSP=${features & 1 ? 'bật' : 'tắt'}`,
-    `MIC=${microphones.length ? microphones.join('+') : 'tắt'}`,
-    `SUB=${features & (1 << 3) ? 'bật' : 'tắt'}`,
-    `EQ=${eq.length ? eq.join(',') : 'tắt'}`,
-    `HIỆU ỨNG=${effects.length ? effects.join(',') : 'tắt'}`,
-    `DSP NHẠC=${musicDsp.length ? musicDsp.join(',') : 'tắt'}`,
-    `ÂM LƯỢNG=${bytes[10]}/${bytes[11]}/${bytes[12]}/${bytes[13]}%`,
-    adc,
-  ].filter(Boolean).join(' ');
+    `Nhạc Bluetooth: ${a2dpStates[bytes[3]] || 'đang kiểm tra'}`,
+    `Đường tiếng: ${features & 1 ? 'sẵn sàng' : 'chưa sẵn sàng'}`,
+    `Micro: ${microphones.length ? microphones.join(' và ') : 'tắt'}`,
+    `Hiệu ứng: ${effects.length ? effects.join(', ') : 'tắt'}`,
+  ].join(' · ');
+}
+
+function appendFriendlySystemStatus(message) {
+  if (!message || message === lastFriendlySystemStatus) return;
+  lastFriendlySystemStatus = message;
+  appendRxLog(`Trạng thái hệ thống: ${message}`);
 }
 
 function setControlValueFromMcu(id, value) {
@@ -859,7 +860,6 @@ function handleBleRxNotification(event) {
       } else {
         setTxStatus(ok ? 'đã xác nhận' : `xác nhận lỗi ${bytes[3]}`, ok ? 'ok' : 'bad');
       }
-      appendRxLog(`RX ACK cmd=0x${bytes[2].toString(16).padStart(2, '0')} status=${bytes[3]}`);
       if (command === DSP_CMD_GET_CONFIG && !ok) {
         finishDspConfigSync(false, `MCU từ chối đọc cấu hình, mã lỗi=${bytes[3]}`);
       }
@@ -867,7 +867,7 @@ function handleBleRxNotification(event) {
     }
     if (bytes[0] === 0xa5 && bytes[1] === 0x81) {
       const status = decodeBleStatus(value, bytes);
-      appendRxLog(status || `Trạng thái không hỗ trợ (${bytes.length} byte)`);
+      appendFriendlySystemStatus(status);
       return;
     }
     if (bytes[0] === 0xa5 && bytes[1] === DSP_EVENT_CONFIG_BEGIN && bytes.length === 8) {
@@ -875,7 +875,6 @@ function handleBleRxNotification(event) {
       configSyncExpectedItems = bytes[3];
       configSyncReceivedItems = 0;
       configSyncRevision = view.getUint32(4, true);
-      appendRxLog(`CONFIG begin v${bytes[2]} items=${configSyncExpectedItems} rev=${configSyncRevision}`);
       return;
     }
     if (bytes[0] === 0xa5 && bytes[1] === DSP_EVENT_CONFIG_ITEM) {
@@ -889,12 +888,12 @@ function handleBleRxNotification(event) {
       renderMcuConfigOnInterface();
       setTxStatus(status === 0 ? 'đồng bộ MCU' : `sync lỗi ${status}`, status === 0 ? 'ok' : 'bad');
       finishDspConfigSync(status === 0,
-        `CONFIG end items=${configSyncReceivedItems}/${configSyncExpectedItems} rev=${revision}`);
+        status === 0 ? 'Đã đồng bộ thông số với thiết bị' : `Thiết bị không đồng bộ được thông số (mã ${status})`);
       return;
     }
   }
   const payload = decodeRxValue(value);
-  appendRxLog(`RX ${payload || '(empty)'}`);
+  appendRxLog('Thiết bị gửi phản hồi chưa được hỗ trợ');
 }
 
 function detachBleRxNotifications() {
@@ -1258,7 +1257,7 @@ async function requestDspConfigFromChip() {
   configSyncExpectedItems = 0;
   configSyncReceivedItems = 0;
   configSyncRevision = 0;
-  appendRxLog('Requesting DSP configuration from MCU...');
+  appendRxLog('Đang tải thông số thiết bị...');
 
   const completion = new Promise((resolve) => {
     configSyncResolve = resolve;

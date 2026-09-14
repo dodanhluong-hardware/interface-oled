@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dsp-interface-oled-v40-gatt-disconnect-20260906';
+const CACHE_NAME = 'dsp-interface-oled-v43-mode-power-mobile-20260914';
 const ASSETS = [
   './',
   './index.html',
